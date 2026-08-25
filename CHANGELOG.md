@@ -1,0 +1,16 @@
+# Changelog
+
+## [1.0.0] - 2026-08-25
+
+### Added
+
+- First public release of the authenticated Streamable HTTP MCP gateway for ProcessWire.
+- Provider discovery for explicit module-owned tools with closed JSON Schema, bounded scopes, safety annotations, and installation-neutral names.
+- Per-client bearer credentials with one-time disclosure, salted and installation-peppered hashes, expiry, revocation, hierarchical scopes, and per-client rate limits.
+- Durable client identities and append-only audit evidence without raw tool arguments.
+- Host, Origin, body-size, endpoint, environment, namespace, and no-store/noindex boundaries.
+- Admin workspaces for readiness, clients, providers, tools, CLI, documentation, and paginated audit history.
+- Optional bounded JSON CLI for inspection and explicitly confirmed credential administration.
+- Compatibility with the official PHP MCP SDK 0.8, stateless MCP 2026-07-28 requests, and compatible legacy handshake clients.
+- Initial provider integrations for Tickets, Ichiban, Liora, Olivia, Relay, Vox, Verk, Folio, and Resend, following the established JobBoard provider contract.
+- Domain-oriented runtime and admin traits under `src/`, with compact ProcessWire composition roots and colocated admin styling.

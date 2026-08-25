@@ -1,0 +1,128 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+if(PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg') exit(1);
+
+$arguments = array_slice($argv, 1);
+$command = 'help';
+$options = [];
+foreach($arguments as $argument) {
+    if(str_starts_with($argument, '--')) {
+        $pair = explode('=', substr($argument, 2), 2);
+        $options[$pair[0]] = $pair[1] ?? true;
+    } elseif($command === 'help') {
+        $command = $argument;
+    }
+}
+
+$help = <<<'TXT'
+MCP Server CLI — bounded local JSON administration
+
+Usage: mcp-server <command> [--root=/path/to/processwire] [options]
+
+Read commands:
+  status
+  clients
+  providers
+  audit [--limit=50]
+
+Credential administration:
+  client-create --label="Computer · Client" [--scopes=read,draft] [--expires=YYYY-MM-DD] --execute
+  client-revoke --id=CLIENT_ID --execute
+
+Every result is JSON. Stored credential hashes are never returned. Creating or
+revoking a client requires the explicit --execute flag. The raw token from
+client-create is printed once and cannot be recovered later.
+TXT;
+
+if($command === 'help' || isset($options['help']) || in_array($command, ['-h', '--help'], true)) {
+    fwrite(STDOUT, $help . PHP_EOL);
+    exit(0);
+}
+
+$root = rtrim((string) ($options['root'] ?? ''), DIRECTORY_SEPARATOR);
+if($root === '') {
+    $candidate = getcwd();
+    while($candidate && $candidate !== dirname($candidate)) {
+        if(is_file($candidate . '/index.php') && is_dir($candidate . '/wire')) {
+            $root = $candidate;
+            break;
+        }
+        $candidate = dirname($candidate);
+    }
+}
+
+try {
+    if($root === '' || !is_file($root . '/wire/core/ProcessWire.php')) {
+        throw new RuntimeException('ProcessWire root not found. Run inside the site or pass --root=/path/to/processwire.');
+    }
+
+    chdir($root);
+    require_once $root . '/wire/core/ProcessWire.php';
+    $config = \ProcessWire\ProcessWire::buildConfig($root);
+    $wire = new \ProcessWire\ProcessWire($config);
+    $mcp = $wire->modules->getModule('McpServer', ['noPermissionCheck' => true]);
+    if(!$mcp instanceof \ProcessWire\McpServer) throw new RuntimeException('MCP Server is not installed.');
+    if(!(bool) $mcp->enable_cli) throw new RuntimeException('MCP Server CLI is disabled in module configuration.');
+
+    $requireExecute = static function(string $operation) use($options): void {
+        if(!isset($options['execute'])) throw new InvalidArgumentException($operation . ' requires the explicit --execute flag.');
+    };
+
+    switch($command) {
+        case 'status':
+            $result = $mcp->toolSystemStatus() + [
+                'cli_enabled' => true,
+                'endpoint_url' => $mcp->endpointUrl(),
+                'active_clients' => count(array_filter($mcp->clients(), static fn(array $client): bool => !empty($client['enabled']))),
+            ];
+            break;
+        case 'clients':
+            $result = $mcp->clients();
+            break;
+        case 'providers':
+            $result = [
+                'providers' => $mcp->providers(),
+                'tools' => $mcp->tools(),
+            ];
+            break;
+        case 'audit':
+            $result = $mcp->recentAudit(max(1, min(200, (int) ($options['limit'] ?? 50))));
+            break;
+        case 'client-create':
+            $requireExecute('Client creation');
+            $label = trim((string) ($options['label'] ?? ''));
+            if($label === '') throw new InvalidArgumentException('Client creation requires --label.');
+            $scopes = array_values(array_filter(array_map('trim', explode(',', (string) ($options['scopes'] ?? 'read')))));
+            $expiresAt = null;
+            if(isset($options['expires'])) {
+                $expires = (string) $options['expires'];
+                $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $expires, new \DateTimeZone('UTC'));
+                $errors = \DateTimeImmutable::getLastErrors();
+                if(!$date || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) || $date->format('Y-m-d') !== $expires) {
+                    throw new InvalidArgumentException('--expires must use YYYY-MM-DD.');
+                }
+                $expiresAt = $date->setTime(23, 59, 59)->getTimestamp();
+                if($expiresAt <= time()) throw new InvalidArgumentException('--expires must be in the future.');
+            }
+            $result = $mcp->issueClient($label, $scopes, $expiresAt);
+            break;
+        case 'client-revoke':
+            $requireExecute('Client revocation');
+            $id = trim((string) ($options['id'] ?? ''));
+            if(!preg_match('/^[a-f0-9]{16,32}$/', $id)) throw new InvalidArgumentException('Client revocation requires a valid --id.');
+            if(!$mcp->revokeClient($id)) throw new RuntimeException('Client was not found.');
+            $result = ['id' => $id, 'revoked' => true];
+            break;
+        default:
+            throw new InvalidArgumentException('Unknown command: ' . $command);
+    }
+
+    fwrite(STDOUT, json_encode(['ok' => true, 'result' => $result], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL);
+    exit(0);
+} catch(Throwable $error) {
+    fwrite(STDERR, json_encode(['ok' => false, 'error' => $error->getMessage()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL);
+    exit(1);
+}
