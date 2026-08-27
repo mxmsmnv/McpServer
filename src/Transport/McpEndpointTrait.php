@@ -34,8 +34,9 @@ trait McpEndpointTrait {
         header('Cache-Control: no-store, private');
         header('X-Robots-Tag: noindex, nofollow', true);
 
-        require_once __DIR__ . '/vendor/autoload.php';
-        require_once __DIR__ . '/McpServerReferenceHandler.php';
+        $moduleRoot = dirname(__DIR__, 2);
+        require_once $moduleRoot . '/vendor/autoload.php';
+        require_once $moduleRoot . '/McpServerReferenceHandler.php';
 
         if(!(bool) $this->enabled) {
             $this->emitJson(503, ['error' => 'mcp_disabled', 'message' => 'The MCP endpoint is not enabled.']);

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1] - 2026-08-27
+
+### Fixed
+
+- Resolve Composer and reference-handler files from the module root when the
+  Streamable HTTP endpoint is implemented by the nested transport trait.
+- Avoid the PHP 8.5 `curl_close()` deprecation in the development HTTP suite.
+
 ## [1.0.0] - 2026-08-25
 
 ### Added

@@ -50,7 +50,10 @@ $checks = [
     'client identities use durable storage' => str_contains($module, 'mcp_server_clients') && str_contains($module, 'ON DUPLICATE KEY UPDATE'),
     'tokens are not exposed by clients API' => str_contains($module, "unset(\$client['token_hash'], \$client['token_hash_version'])"),
     'scope boundary exists' => str_contains($module, 'clientHasScope(') && str_contains($module, "['read', 'draft', 'publish', 'admin']"),
-    'expected domain failures become safe MCP tool errors' => str_contains($module, "require_once __DIR__ . '/McpServerReferenceHandler.php'")
+    'runtime dependencies resolve from the module root' => str_contains($module, 'dirname(__DIR__, 2)')
+        && str_contains($module, "'/vendor/autoload.php'")
+        && str_contains($module, "'/McpServerReferenceHandler.php'"),
+    'expected domain failures become safe MCP tool errors' => str_contains($module, "'/McpServerReferenceHandler.php'")
         && str_contains($referenceHandler, 'catch(WireException $e)')
         && str_contains($referenceHandler, 'new ToolCallException($e->getMessage()'),
     'audit recognises protocol and tool-result errors' => str_contains($module, 'responseRepresentsError($response)')

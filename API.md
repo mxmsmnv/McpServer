@@ -5,7 +5,7 @@ serves both the stateless MCP 2026-07-28 lifecycle and compatible legacy
 handshake clients. Provider modules do not implement transport or protocol
 negotiation; they publish only governed domain capabilities.
 
-Release version: `1.0.0` (`100` in ProcessWire module metadata).
+Release version: `1.0.1` (`101` in ProcessWire module metadata).
 
 ## Provider discovery
 
