@@ -21,8 +21,8 @@ class McpServer extends WireData implements Module, ConfigurableModule {
     use McpProviderRegistryTrait;
     use McpAuditTrait;
 
-    public const VERSION = 100;
-    public const VERSION_STRING = '1.0.0';
+    public const VERSION = 101;
+    public const VERSION_STRING = '1.0.1';
     public const DEFAULT_ENDPOINT = '/mcp/';
     public const DEFAULT_RATE_LIMIT = 60;
     public const MAX_BODY_BYTES = 2 * 1024 * 1024;

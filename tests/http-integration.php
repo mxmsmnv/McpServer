@@ -77,7 +77,7 @@ $request = static function(string $url, ?string $token, string $body, array $hea
     $responseBody = curl_exec($curl);
     $error = $responseBody === false ? curl_error($curl) : '';
     $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-    curl_close($curl);
+    if(PHP_VERSION_ID < 80500) curl_close($curl);
     if($responseBody === false) $responseBody = '';
     $json = json_decode((string) $responseBody, true);
     return ['status' => $status, 'headers' => $responseHeaders, 'body' => (string) $responseBody, 'json' => $json, 'error' => $error];
