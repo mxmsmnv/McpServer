@@ -64,7 +64,8 @@ $checks = [
         && str_contains($module, 'maxBodyBytes: self::MAX_BODY_BYTES'),
     'SDK 0.8 owns protocol negotiation at the transport boundary' => !str_contains($module, 'ProtocolVersionMiddleware'),
     'FastCGI duplicate Host values are canonicalised' => str_contains($module, "explode(',', \$request->getHeaderLine('Host'), 2)"),
-    'providers require explicit metadata' => str_contains($module, "empty(\$info['mcpProvider'])"),
+    'providers require explicit metadata and load independently of the ProcessWire user' => str_contains($module, "empty(\$info['mcpProvider'])")
+        && str_contains($module, "'noPermissionCheck' => true"),
     'installation namespace is configurable and applied to tools and tokens' => str_contains($module, "'namespace_prefix' => ''")
         && str_contains($module, 'public function namespacePrefix()')
         && str_contains($module, "\$this->namespacePrefix() . '_mcp_'")

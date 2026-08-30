@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2] - 2026-08-30
+
+### Fixed
+
+- Discover explicit MCP provider modules in CLI and authenticated HTTP
+  requests even when ProcessWire bootstraps without an admin user. Provider
+  tool scopes and module business rules remain authoritative.
+
 ## [1.0.1] - 2026-08-27
 
 ### Fixed

@@ -156,7 +156,15 @@ trait McpProviderRegistryTrait {
             $name = (string) ($info['name'] ?? $this->wire('modules')->getModuleClass($id));
             if($name === '' || $name === self::class) continue;
             try {
-                $module = $this->wire('modules')->getModule($name, ['noInstall' => true, 'noThrow' => true]);
+                // Provider discovery is an internal gateway operation. Loading a
+                // provider must not depend on the current ProcessWire user (CLI
+                // and authenticated HTTP requests commonly bootstrap as guest);
+                // tool scopes and provider business rules remain authoritative.
+                $module = $this->wire('modules')->getModule($name, [
+                    'noInstall' => true,
+                    'noThrow' => true,
+                    'noPermissionCheck' => true,
+                ]);
                 if($module && method_exists($module, 'mcpProviderInfo') && method_exists($module, 'mcpTools')) $providers[$name] = $module;
             } catch(\Throwable) {
                 continue;
