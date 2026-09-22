@@ -10,6 +10,7 @@ $readSources = static function(array $files): string {
 };
 
 $moduleRoot = (string) file_get_contents($root . '/McpServer.module.php');
+$clientTrait = (string) file_get_contents($root . '/src/Security/McpClientTrait.php');
 $module = $moduleRoot . $readSources([
     $root . '/src/Core/McpLifecycleTrait.php',
     $root . '/src/Admin/McpConfigTrait.php',
@@ -50,6 +51,10 @@ $checks = [
     'client identities use durable storage' => str_contains($module, 'mcp_server_clients') && str_contains($module, 'ON DUPLICATE KEY UPDATE'),
     'tokens are not exposed by clients API' => str_contains($module, "unset(\$client['token_hash'], \$client['token_hash_version'])"),
     'scope boundary exists' => str_contains($module, 'clientHasScope(') && str_contains($module, "['read', 'draft', 'publish', 'admin']"),
+    'providers receive only bounded authenticated client context' => str_contains($clientTrait, 'requestClientContext()')
+        && str_contains($clientTrait, "'namespace' => \$this->namespacePrefix()")
+        && str_contains($clientTrait, "'scopes' => \$this->normaliseScopes(")
+        && !str_contains($clientTrait, "'token' => \$this->activeClient"),
     'runtime dependencies resolve from the module root' => str_contains($module, 'dirname(__DIR__, 2)')
         && str_contains($module, "'/vendor/autoload.php'")
         && str_contains($module, "'/McpServerReferenceHandler.php'"),

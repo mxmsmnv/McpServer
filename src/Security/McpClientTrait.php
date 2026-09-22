@@ -5,6 +5,25 @@
  */
 trait McpClientTrait {
 
+    /**
+     * Return the authenticated identity for the currently executing MCP request.
+     *
+     * Provider modules may use this request-scoped projection to bind domain
+     * principals to a gateway client without accepting an impersonable identity
+     * in tool arguments. Credential material and token hashes are never exposed.
+     * Calls outside an authenticated MCP request return null.
+     *
+     * @return array{id:string,namespace:string,scopes:array<int,string>}|null
+     */
+    public function requestClientContext(): ?array {
+        if(!is_array($this->activeClient) || empty($this->activeClient['id'])) return null;
+        return [
+            'id' => (string) $this->activeClient['id'],
+            'namespace' => $this->namespacePrefix(),
+            'scopes' => $this->normaliseScopes((array) ($this->activeClient['scopes'] ?? [])),
+        ];
+    }
+
     public function issueClient(string $label, array $scopes = ['read'], ?int $expiresAt = null): array {
         $label = trim($this->wire('sanitizer')->text($label));
         if($label === '') throw new WireException('Client label is required.');

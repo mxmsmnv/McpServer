@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.3] - 2026-09-22
+
+### Added
+
+- Expose a request-scoped provider context containing only the authenticated
+  client ID, installation namespace, and normalized scopes, so domain modules
+  can bind remote calls to their own principals without accepting an
+  impersonable identity argument or receiving credential material.
+
 ## [1.0.2] - 2026-08-30
 
 ### Fixed

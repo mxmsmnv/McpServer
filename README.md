@@ -35,6 +35,8 @@ If this project helps your work, consider supporting future development through
 - Rate-limits each client and validates Host, Origin, and request body size.
 - Records identity, tool, scope, result, timing, and an argument digest without
   retaining raw tool arguments.
+- Gives provider handlers a request-scoped client ID, namespace, and scope
+  projection for domain-principal binding without exposing bearer credentials.
 - Includes ProcessWire admin workspaces for readiness, clients, providers,
   tools, CLI guidance, documentation, and paginated audit history.
 - Includes an optional bounded JSON CLI for local inspection and explicitly

@@ -36,3 +36,9 @@ Production operators must use HTTPS, an explicit production environment mode,
 installation-specific `userAuthSalt`, separate least-privilege credentials per
 client, reviewed Host/Origin allowlists, bounded rate limits, and routine audit
 review. Development and production credentials must never be shared.
+
+Provider modules that perform identity-sensitive work must resolve their domain
+principal from `requestClientContext()`. The context contains only the active
+client ID, installation namespace, and normalized scopes. Providers must not
+accept a caller-supplied agent or user identity as a substitute, and must not
+persist or log bearer credentials.

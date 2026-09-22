@@ -5,7 +5,7 @@ serves both the stateless MCP 2026-07-28 lifecycle and compatible legacy
 handshake clients. Provider modules do not implement transport or protocol
 negotiation; they publish only governed domain capabilities.
 
-Release version: `1.0.1` (`101` in ProcessWire module metadata).
+Release version: `1.0.3` (`103` in ProcessWire module metadata).
 
 ## Provider discovery
 
@@ -119,6 +119,15 @@ Returns the current provider inventory and readiness state.
 ### `tools(): array`
 
 Returns public tool metadata without PHP callables.
+
+### `requestClientContext(): ?array`
+
+Returns the authenticated request-scoped client identity available while a
+provider tool is executing: `id`, installation `namespace`, and normalized
+`scopes`. It returns `null` outside an authenticated MCP request and never
+returns bearer material, token hashes, or stored credential metadata. Provider
+modules should use this identity to resolve their own durable principals rather
+than accepting an impersonable agent or user ID in tool arguments.
 
 ### `recentAudit(int $limit = 50): array`
 
