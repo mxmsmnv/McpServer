@@ -45,6 +45,7 @@ if($insecure) fwrite(STDOUT, "[WARN] TLS certificate verification is disabled fo
 $issued = [];
 $failures = [];
 $passes = 0;
+$legacySession = '';
 
 $record = static function(bool $ok, string $label, string $detail = '') use (&$failures, &$passes): void {
     fwrite(STDOUT, ($ok ? '[PASS] ' : '[FAIL] ') . $label . ($detail !== '' ? ' — ' . $detail : '') . PHP_EOL);
@@ -52,7 +53,7 @@ $record = static function(bool $ok, string $label, string $detail = '') use (&$f
 };
 
 /** @return array{status:int,headers:array<string,string>,body:string,json:mixed,error:string} */
-$request = static function(string $url, ?string $token, string $body, array $headers = []) use($insecure): array {
+$request = static function(string $url, ?string $token, string $body, array $headers = [], string $method = 'POST') use($insecure): array {
     $responseHeaders = [];
     $curl = curl_init($url);
     $baseHeaders = ['Content-Type: application/json', 'Accept: application/json, text/event-stream'];
@@ -60,6 +61,7 @@ $request = static function(string $url, ?string $token, string $body, array $hea
     foreach($headers as $name => $value) $baseHeaders[] = $name . ': ' . $value;
     curl_setopt_array($curl, [
         CURLOPT_POST => true,
+        CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_POSTFIELDS => $body,
         CURLOPT_HTTPHEADER => $baseHeaders,
         CURLOPT_RETURNTRANSFER => true,
@@ -183,14 +185,64 @@ try {
         $failureName = (string) $restrictedTool['name'];
         $failureBody = $modern('tools/call', $runId . '-provider-failure', ['name' => $failureName, 'arguments' => new stdClass()]);
         $failureResponse = $request($endpoint, (string) $publish['token'], $failureBody, $modernHeaders('tools/call', $failureName));
-        $afterFailure = $request($endpoint, (string) $read['token'], $callBody, $modernHeaders('tools/call', $readName));
+        $afterFailureBody = $modern('tools/call', $runId . '-after-failure', ['name' => $readName, 'arguments' => new stdClass()]);
+        $afterFailure = $request($endpoint, (string) $read['token'], $afterFailureBody, $modernHeaders('tools/call', $readName));
         $record($failureResponse['status'] !== 500 && $afterFailure['status'] === 200, 'provider or schema failure remains isolated', 'failure HTTP ' . $failureResponse['status']);
+    }
+
+    // Regression for the reported scope bypass: an old handshake must never
+    // enable unaudited, unauthorized calls through an array envelope.
+    $legacyInit = $request($endpoint, (string) $read['token'], json_encode([
+        'jsonrpc' => '2.0', 'id' => $runId . '-legacy-init', 'method' => 'initialize',
+        'params' => ['protocolVersion' => '2025-03-26', 'capabilities' => new stdClass(), 'clientInfo' => ['name' => 'Scope regression', 'version' => '1']],
+    ], JSON_THROW_ON_ERROR));
+    $legacySession = $legacyInit['headers']['mcp-session-id'] ?? '';
+    $record($legacyInit['status'] === 200 && $legacySession !== '', 'legacy 2025-03-26 handshake succeeds');
+    if($legacySession !== '') {
+        $legacyHeaders = ['Mcp-Session-Id' => $legacySession, 'MCP-Protocol-Version' => '2025-03-26'];
+        $initialized = $request($endpoint, (string) $read['token'], json_encode(['jsonrpc' => '2.0', 'method' => 'notifications/initialized'], JSON_THROW_ON_ERROR), $legacyHeaders);
+        $record(in_array($initialized['status'], [200, 202], true), 'legacy initialized notification succeeds');
+        $legacyRead = ['jsonrpc' => '2.0', 'id' => $runId . '-legacy-read', 'method' => 'tools/call', 'params' => ['name' => $readName, 'arguments' => new stdClass()]];
+        $readLegacy = $request($endpoint, (string) $read['token'], json_encode($legacyRead, JSON_THROW_ON_ERROR), $legacyHeaders);
+        $record($readLegacy['status'] === 200, 'legacy single read call remains supported');
+        if($restrictedTool) {
+            $restrictedLegacy = ['jsonrpc' => '2.0', 'id' => $runId . '-legacy-denied', 'method' => 'tools/call', 'params' => ['name' => $restrictedName, 'arguments' => new stdClass()]];
+            $deniedLegacy = $request($endpoint, (string) $read['token'], json_encode($restrictedLegacy, JSON_THROW_ON_ERROR), $legacyHeaders);
+            $record($deniedLegacy['status'] === 403, 'legacy single restricted call is denied');
+            $restrictedLegacy['id'] = $runId . '-batch-denied';
+            $batchDenied = $request($endpoint, (string) $read['token'], json_encode([$restrictedLegacy], JSON_THROW_ON_ERROR), $legacyHeaders);
+            $record($batchDenied['status'] === 400 && ($batchDenied['json']['error'] ?? '') === 'batch_not_supported', 'legacy batch scope bypass is rejected before SDK dispatch');
+            $mixedRead = $legacyRead;
+            $mixedRead['id'] = $runId . '-batch-read-denied';
+            $restrictedLegacy['id'] = $runId . '-batch-mixed-denied';
+            $mixed = $request($endpoint, (string) $read['token'], json_encode([$mixedRead, $restrictedLegacy], JSON_THROW_ON_ERROR), $legacyHeaders);
+            $record($mixed['status'] === 400, 'mixed batches are rejected atomically');
+            $adminBatch = $request($endpoint, (string) $admin['token'], json_encode([$restrictedLegacy], JSON_THROW_ON_ERROR), $legacyHeaders);
+            $record($adminBatch['status'] === 400, 'batch rejection also applies to admin clients');
+        }
+        $emptyBatch = $request($endpoint, (string) $read['token'], '[]', $legacyHeaders);
+        $record($emptyBatch['status'] === 400, 'empty legacy batch is rejected');
+        $modernBatchBody = $modern('tools/call', $runId . '-modern-batch', ['name' => $readName, 'arguments' => new stdClass()]);
+        $modernBatch = $request($endpoint, (string) $read['token'], '[' . $modernBatchBody . ']', $modernHeaders('tools/call', $readName));
+        $record($modernBatch['status'] === 400 && ($modernBatch['json']['error'] ?? '') === 'batch_not_supported', 'modern batches share the same gateway rejection');
+        $readLegacy = $request($endpoint, (string) $read['token'], json_encode($legacyRead, JSON_THROW_ON_ERROR), $legacyHeaders);
+        $record($readLegacy['status'] === 200, 'legacy session remains usable after rejected batches');
     }
 
     $auditRows = $mcp->recentAudit(200);
     $auditMatch = array_filter($auditRows, static fn(array $row): bool => (string) ($row['request_id'] ?? '') === $runId . '-read');
     $record($auditMatch !== [], 'successful tool call creates bounded audit evidence');
+    $record(count($auditMatch) === 1, 'single tool execution is audited exactly once');
+    if($restrictedTool && $legacySession !== '') {
+        $deniedAudit = array_values(array_filter($auditRows, static fn(array $row): bool => (string) ($row['request_id'] ?? '') === $runId . '-batch-denied'));
+        $record(count($deniedAudit) === 1 && $deniedAudit[0]['status'] === 'denied' && $deniedAudit[0]['client_id'] === $read['id'] && $deniedAudit[0]['scope'] === $restrictedTool['scope'], 'rejected legacy batch is audited with client, scope and individual request ID');
+        $mixedAudit = array_values(array_filter($auditRows, static fn(array $row): bool => (string) ($row['request_id'] ?? '') === $runId . '-batch-read-denied'));
+        $record(count($mixedAudit) === 1 && $mixedAudit[0]['status'] === 'denied', 'read element of a rejected mixed batch never executes');
+    }
 } finally {
+    if($legacySession !== '' && isset($read['token'])) {
+        $request($endpoint, (string) $read['token'], '', ['Mcp-Session-Id' => $legacySession, 'MCP-Protocol-Version' => '2025-03-26'], 'DELETE');
+    }
     foreach(array_unique($issued) as $id) $mcp->revokeClient($id);
 }
 

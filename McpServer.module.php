@@ -21,8 +21,8 @@ class McpServer extends WireData implements Module, ConfigurableModule {
     use McpProviderRegistryTrait;
     use McpAuditTrait;
 
-    public const VERSION = 104;
-    public const VERSION_STRING = '1.0.4';
+    public const VERSION = 105;
+    public const VERSION_STRING = '1.0.5';
     public const DEFAULT_ENDPOINT = '/mcp/';
     public const DEFAULT_RATE_LIMIT = 60;
     public const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -36,7 +36,7 @@ class McpServer extends WireData implements Module, ConfigurableModule {
     public static function getModuleInfo(): array {
         return [
             'title' => 'MCP Server',
-            'version' => 104,
+            'version' => 105,
             'summary' => 'Connect AI clients to safe, module-owned ProcessWire operations.',
             'author' => 'Maxim Semenov',
             'href' => 'https://github.com/mxmsmnv/McpServer',

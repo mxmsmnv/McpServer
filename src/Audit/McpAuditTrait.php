@@ -71,7 +71,8 @@ trait McpAuditTrait {
 
     private function audit(string $tool, string $scope, string $status, int $durationMs, array $request): void {
         try {
-            $requestId = (string) ($request['id'] ?? bin2hex(random_bytes(8)));
+            $id = $request['id'] ?? null;
+            $requestId = is_string($id) || is_int($id) ? (string) $id : bin2hex(random_bytes(8));
             $arguments = (array) ($request['params']['arguments'] ?? []);
             $digest = hash('sha256', json_encode($arguments, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '');
             $statement = $this->wire('database')->prepare(

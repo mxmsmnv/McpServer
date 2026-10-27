@@ -1,6 +1,11 @@
 <?php namespace ProcessWire;
 
 use Laminas\HttpHandlerRunner\Emitter\SapiEmitter;
+use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Capability\Registry\ToolReference;
+use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Request\CallToolRequest;
+use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Session\FileSessionStore;
@@ -31,6 +36,7 @@ trait McpEndpointTrait {
 
 
     private function emitEndpointResponse(): void {
+        $this->activeClient = null;
         header('Cache-Control: no-store, private');
         header('X-Robots-Tag: noindex, nofollow', true);
 
@@ -76,6 +82,10 @@ trait McpEndpointTrait {
         }
 
         $requestData = $this->readRequestData($rawBody);
+        if($this->rejectBatchRequest($rawBody, $requestData)) {
+            $this->emitJson(400, ['error' => 'batch_not_supported', 'message' => 'Send one JSON-RPC message per HTTP request.']);
+            return;
+        }
         $toolName = $this->requestToolName($requestData);
         $tool = $toolName !== '' ? ($this->toolRegistry()[$toolName] ?? null) : null;
 
@@ -91,11 +101,15 @@ trait McpEndpointTrait {
             return;
         }
 
+        $toolDispatched = false;
         $builder = Server::builder()
             ->setServerInfo($this->serverName(), self::VERSION_STRING, 'Governed ProcessWire operations exposed by installed module providers.')
             ->setInstructions($this->serverInstructions())
             ->setSession(new FileSessionStore($this->sessionPath(), 3600))
-            ->setReferenceHandler(new McpServerReferenceHandler());
+            ->setReferenceHandler(new McpServerReferenceHandler(function(ToolReference $reference, array $arguments, ReferenceHandler $handler) use (&$toolDispatched): mixed {
+                $toolDispatched = true;
+                return $this->dispatchMcpTool($reference, $arguments, $handler);
+            }));
 
         foreach($this->toolRegistry() as $definition) {
             $annotations = new ToolAnnotations(
@@ -141,14 +155,54 @@ trait McpEndpointTrait {
         try {
             $response = $builder->build()->run($transport);
             $duration = (int) round((microtime(true) - $started) * 1000);
-            if($tool) $this->audit($toolName, (string) $tool['scope'], $this->responseRepresentsError($response) ? 'error' : 'ok', $duration, $requestData);
+            if($tool && !$toolDispatched) $this->audit($toolName, (string) $tool['scope'], $this->responseRepresentsError($response) ? 'error' : 'ok', $duration, $requestData);
             (new SapiEmitter())->emit($response);
         } catch(\Throwable $e) {
             $duration = (int) round((microtime(true) - $started) * 1000);
-            if($tool) $this->audit($toolName, (string) $tool['scope'], 'error', $duration, $requestData);
+            if($tool && !$toolDispatched) $this->audit($toolName, (string) $tool['scope'], 'error', $duration, $requestData);
             $this->wire('log')->save('mcp-server', 'Endpoint failure: ' . $e->getMessage());
             $this->emitJson(500, ['error' => 'mcp_failure', 'message' => 'The MCP request could not be completed.']);
+        } finally {
+            $this->activeClient = null;
         }
+    }
+
+    /** Final authorization boundary, independent of the transport envelope. */
+    private function dispatchMcpTool(ToolReference $reference, array $arguments, ReferenceHandler $handler): mixed {
+        $name = $reference->tool->name;
+        $tool = $this->toolRegistry()[$name] ?? null;
+        $scope = (string) ($tool['scope'] ?? 'unknown');
+        $request = $arguments['_request'] ?? null;
+        $requestData = $request instanceof CallToolRequest ? $request->jsonSerialize() : [];
+        if(!$tool || empty($this->activeClient['id']) || !$request instanceof CallToolRequest
+            || $request->name !== $name || !$this->clientHasScope($this->activeClient, $scope)) {
+            $this->audit($name, $scope, 'denied', 0, $requestData);
+            throw new ToolCallException('This client is not allowed to call the requested tool.');
+        }
+
+        $started = microtime(true);
+        try {
+            $result = $handler->handle($reference, $arguments);
+        } catch(\Throwable $e) {
+            $this->audit($name, $scope, 'error', (int) round((microtime(true) - $started) * 1000), $requestData);
+            throw $e;
+        }
+        $status = $result instanceof CallToolResult && $result->isError ? 'error' : 'ok';
+        $this->audit($name, $scope, $status, (int) round((microtime(true) - $started) * 1000), $requestData);
+        return $result;
+    }
+
+    /** Reject batches for every protocol era; bound audit work on hostile input. */
+    private function rejectBatchRequest(string $raw, array $requests): bool {
+        if(!str_starts_with(ltrim($raw), '[')) return false;
+        foreach(array_slice($requests, 0, 100) as $request) {
+            if(!is_array($request)) continue;
+            $name = $this->requestToolName($request);
+            if($name === '') continue;
+            $scope = (string) ($this->toolRegistry()[$name]['scope'] ?? 'unknown');
+            $this->audit($name, $scope, 'denied', 0, $request);
+        }
+        return true;
     }
 
 
@@ -182,7 +236,8 @@ trait McpEndpointTrait {
     /** @param array<string,mixed> $request */
     private function requestToolName(array $request): string {
         if(($request['method'] ?? '') !== 'tools/call') return '';
-        return strtolower(trim((string) ($request['params']['name'] ?? '')));
+        $params = $request['params'] ?? null;
+        return is_array($params) && is_string($params['name'] ?? null) ? $params['name'] : '';
     }
 
     /** @param array<string,mixed> $request */

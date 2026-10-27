@@ -104,7 +104,10 @@ $registry->registerTool(new \Mcp\Schema\Tool(name: 'context_probe', title: null,
         $seen = $context->getRequest()->arguments;
         return ['limit' => $seen['limit'] ?? 5];
     });
-$handler = new \Mcp\Server\Handler\Request\CallToolHandler($registry, new McpServerReferenceHandler());
+$handler = new \Mcp\Server\Handler\Request\CallToolHandler($registry, new McpServerReferenceHandler(
+    // Isolate SDK argument mapping here; gateway policy is covered separately.
+    static fn($reference, $arguments, $delegate) => $delegate->handle($reference, $arguments)
+));
 $session = new \Mcp\Server\Session\Session(new \Mcp\Server\Session\InMemorySessionStore());
 $dispatch = static function(array $args) use ($handler, $session): object {
     $request = new \Mcp\Schema\Request\CallToolRequest('context_probe', $args);
