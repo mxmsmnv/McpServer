@@ -24,6 +24,7 @@ composer audit
 find . -path './.git' -prune -o -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/contract.php
 php tests/regression.php
+php tests/security-regression.php
 php tests/processwire-integration.php --root=/path/to/development-site
 php tests/http-integration.php --root=/path/to/development-site --url=http://127.0.0.1:8766/mcp/ --execute
 ```
@@ -110,3 +111,27 @@ backup of module files and the consuming site's normal database backup.
 - Test credentials revoked; endpoint configuration restored after testing.
 - Fresh lifecycle and the minimum ProcessWire version were not rerun locally.
   PHP 8.2 validation is delegated to CI and must be checked before publication.
+
+
+## Release evidence: 1.0.5 (2026-10-27)
+
+- Security reproduction: the new final-dispatch denial test failed on the
+  unchanged 1.0.4 reference handler because a read client executed a publish
+  fixture. The fixture only increments an in-memory counter.
+- Fix coverage: 41 security regressions cover final dispatch, the complete
+  4-by-4 scope hierarchy, authenticated identity, request/reference binding,
+  success/error/denial audit, batch rejection, malformed IDs and digest-only
+  persistence. A real bundled-SDK 2025-03-26 handshake and mixed batch bypass
+  the outer envelope gate in the test and still cannot execute publish for read.
+- Local checks: 42 contract, 27 existing behavioral, 21 ProcessWire and 29 real
+  HTTP checks passed on ProcessWire 3.0.259 / PHP 8.5.8. HTTP checks cover legacy
+  and modern single messages, batch rejection, session continuity, per-element
+  denied audit and absence of duplicate audit entries for one invocation.
+- No UI/lifecycle/storage schema/dependency changes; focused API and dispatcher
+  checks apply. Fresh install/uninstall and browser layout testing were not
+  repeated for this patch. PHP 8.2 and 8.5 are checked by CI before publication.
+- Development endpoint settings are backed up and restored after validation;
+  issued test clients are revoked and the legacy test session is deleted.
+- Upgrade complete runtime files to 1.0.5; credentials do not need rotation.
+  JSON-RPC batches are no longer supported in any protocol era. If rollback
+  is necessary, disable the endpoint before restoring an older runtime.

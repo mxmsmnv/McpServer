@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.0.5] - 2026-10-27
+
+### Security
+
+- Fix an authenticated scope-check and audit bypass through legacy JSON-RPC
+  batches, reported by MrSnoozles. Require authorization for the actual tool
+  reference immediately before every provider invocation and audit each
+  invocation or dispatch denial independently of the HTTP envelope.
+- Reject JSON-RPC batch bodies in every protocol era before SDK dispatch;
+  audit up to 100 denied tool attempts without executing any batch element.
+- Fail closed on missing identity, unknown tool references and mismatched
+  request context. Preserve single-message legacy handshake support.
+
+### Validation
+
+- Add security regressions exercising real bundled SDK legacy batch dispatch,
+  scope boundaries, denial/success/error audits, malformed batches and bounded
+  audit work. Extend real HTTP tests with legacy handshakes, batch rejection,
+  mixed batches and persisted per-call denial evidence.
+
+### Upgrade
+
+- Update the complete module and refresh ProcessWire modules. Existing tokens
+  retain their scopes and format; no database migration is required. Clients
+  using batches must send separate HTTP requests. Do not restore an older
+  runtime with the endpoint enabled; disable remote access before rollback.
+
 ## [1.0.4] - 2026-10-27
 
 ### Fixed

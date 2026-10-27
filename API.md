@@ -5,7 +5,7 @@ serves both the stateless MCP 2026-07-28 lifecycle and compatible legacy
 handshake clients. Provider modules do not implement transport or protocol
 negotiation; they publish only governed domain capabilities.
 
-Release version: `1.0.4` (`104` in ProcessWire module metadata).
+Release version: `1.0.5` (`105` in ProcessWire module metadata).
 
 ## Provider discovery
 
@@ -124,6 +124,26 @@ format; no token rotation or schema migration is required.
 
 Scopes are hierarchical. An `admin` client can call all tools; a `draft`
 client can call `draft` and `read`; a `read` client cannot mutate state.
+
+## Request authorization and batching
+
+Send one JSON-RPC message per HTTP request. From 1.0.5, JSON array bodies are
+rejected with HTTP 400 (`batch_not_supported`) for every protocol revision,
+including legacy sessions. No element is executed. The gateway records denied
+tool attempts from up to the first 100 batch elements, with each element's
+request ID, client ID and required scope; raw arguments are not retained.
+
+Single-message legacy handshakes remain supported. Protocol negotiation does
+not expand a client's scopes. A second authorization check at the SDK tool
+reference dispatch boundary verifies the actual registered tool, authenticated
+client and scope before calling the provider. Execution success, tool errors,
+exceptions and dispatch denials are audited there using the individual request.
+Transport/schema failures that occur before dispatch retain envelope auditing
+when a tool is identifiable. Each normal invocation is audited once.
+
+`McpServerReferenceHandler` and its gateway dispatch callback are internal
+implementation details, not provider APIs. Providers continue to expose the
+same documented handler and schema contract.
 
 ## Public module methods
 

@@ -11,6 +11,21 @@ files between releases.
 | 1.x | Supported |
 | 0.x and earlier | Unsupported |
 
+## Authenticated scope bypass fixed in 1.0.5
+
+Upgrade installations running 1.0.4 or earlier before relying on client scope
+isolation. A legacy JSON-RPC batch could bypass envelope-level scope checks
+and audit recording, allowing a valid low-scope credential to reach registered
+higher-scope provider tools. Authentication was still required, and the impact
+depends on the tools provided by installed modules.
+
+Version 1.0.5 rejects batches for all protocol revisions and enforces scope
+again at each actual provider dispatch. Single-message clients and existing
+tokens remain compatible. If an immediate update is unavailable, keep the
+remote endpoint disabled. Review provider/application logs and state when
+assessing prior use: missing gateway audit entries do not establish that no
+unauthorized tool call occurred. This fix does not itself rotate credentials.
+
 ## Reporting a vulnerability
 
 Do not open a public issue or forum topic for a suspected vulnerability. Use

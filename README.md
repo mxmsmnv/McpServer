@@ -28,7 +28,8 @@ If this project helps your work, consider supporting future development through
 - Supports stateless MCP 2026-07-28 requests and compatible legacy handshakes.
 - Discovers only installed modules that explicitly declare `mcpProvider`.
 - Validates every tool input against a closed JSON Schema.
-- Applies hierarchical `read`, `draft`, `publish`, and `admin` scopes.
+- Applies hierarchical `read`, `draft`, `publish`, and `admin` scopes at the
+  gateway and again immediately before each provider tool invocation.
 - Issues separate revocable bearer credentials for each client runtime.
 - Stores only salted, installation-peppered credential hashes; raw tokens are
   shown once and cannot be recovered. Stored token prefixes select candidates
@@ -89,6 +90,11 @@ Composer runtime dependencies, including `vendor/`, ship with the release.
 8. Review every discovered provider and tool before enabling the endpoint.
 
 The default endpoint is `/mcp/` and is disabled by default.
+
+Security update: install the latest patch before enabling remote access.
+JSON-RPC batches are rejected for all protocol versions; send one message per
+HTTP request. Single-message legacy clients remain supported. See
+[SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Client Connection
 
@@ -174,6 +180,7 @@ php -l ProcessMcpServer.module.php
 find src -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/contract.php
 php tests/regression.php
+php tests/security-regression.php
 ```
 
 The real HTTP integration suite is development-only and requires an explicit
