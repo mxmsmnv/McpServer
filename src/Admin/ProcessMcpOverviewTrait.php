@@ -40,11 +40,12 @@ trait ProcessMcpOverviewTrait {
             . '<section class="mcp-section"><header><div><p class="mcp-kicker">' . $this->_('Operating surface') . '</p><h2>' . $this->_('Choose the task, then review the evidence') . '</h2><p>' . $this->_('The overview stays compact; detailed provider, tool, credential, and audit records live in their dedicated workspaces.') . '</p></div></header><div class="mcp-action-grid">'
             . $this->actionCard('key', $this->_('Clients'), sprintf($this->_('%d active credentials'), $readyClients), $base . 'clients/')
             . $this->actionCard('plug', $this->_('Providers'), sprintf($this->_('%d integrations · %d tools'), count($providers), count($tools)), $base . 'providers/')
+            . $this->actionCard('list', $this->_('Tools'), sprintf($this->_('%d tools'), count($tools)), $base . 'tools/')
             . $this->actionCard('terminal', 'CLI', $this->_('Commands and local automation'), $base . 'cli/')
             . $this->actionCard('history', $this->_('Audit'), $this->_('Recent calls and outcomes'), $base . 'audit/')
             . $this->actionCard('book', $this->_('Documentation'), $this->_('Connection, CLI, and module guide'), $base . 'documentation/')
             . '</div></section>'
-            . '<section class="mcp-panel"><header><div><p class="mcp-kicker">' . $this->_('Authority map') . '</p><h2>' . $this->_('Tools by required scope') . '</h2><p>' . $this->_('Higher scopes include lower ones, but every tool remains bound to its own declared minimum.') . '</p></div><a class="uk-button uk-button-default" href="' . $this->e($base . 'providers/') . '">' . $this->_('View tool registry') . '</a></header><div class="mcp-scope-summary">'
+            . '<section class="mcp-panel"><header><div><p class="mcp-kicker">' . $this->_('Authority map') . '</p><h2>' . $this->_('Tools by required scope') . '</h2><p>' . $this->_('Higher scopes include lower ones, but every tool remains bound to its own declared minimum.') . '</p></div><a class="uk-button uk-button-default" href="' . $this->e($base . 'tools/') . '">' . $this->_('View tool registry') . '</a></header><div class="mcp-scope-summary">'
             . $this->scopeMetric('read', $scopeCounts['read'])
             . $this->scopeMetric('draft', $scopeCounts['draft'])
             . $this->scopeMetric('publish', $scopeCounts['publish'])

@@ -5,6 +5,16 @@
  */
 trait ProcessMcpProvidersTrait {
 
+    public function ___executeTools(): string {
+        $this->headline($this->_('MCP Tools'));
+        $tools = $this->mcp()->tools();
+        return $this->workspace(
+            $this->nav('tools')
+            . $this->pageIntro($this->_('Tool registry'), $this->_('Review the operations exposed by installed providers and the scope each operation requires.'), '<span>' . sprintf($this->_('%d tools'), count($tools)) . '</span>')
+            . $this->toolTable($tools)
+        );
+    }
+
     public function ___executeProviders(): string {
         $this->headline($this->_('MCP Providers'));
         $mcp = $this->mcp();

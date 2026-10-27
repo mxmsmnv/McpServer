@@ -79,6 +79,11 @@ trait McpClientTrait {
         foreach($clients as $id => $client) {
             if(empty($client['enabled']) || empty($client['token_hash'])) continue;
             if(!empty($client['expires_at']) && (int) $client['expires_at'] <= time()) continue;
+            // The display prefix selects candidates; only the full credential
+            // hash authenticates them. Empty legacy prefixes still fall back to
+            // verification, and collisions must not prevent later matches.
+            $prefix = (string) ($client['prefix'] ?? '');
+            if($prefix !== '' && !str_starts_with($raw, $prefix)) continue;
             $hashVersion = (int) ($client['token_hash_version'] ?? 1);
             try {
                 $valid = $hashVersion >= 2

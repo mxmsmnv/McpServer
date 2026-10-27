@@ -123,7 +123,7 @@ trait McpEndpointTrait {
         $hosts = array_values(array_unique(array_filter(array_merge(
             $this->lineList((string) $this->allowed_hosts),
             $originHosts,
-            [(string) ($_SERVER['HTTP_HOST'] ?? ''), parse_url($this->publicSiteUrl(), PHP_URL_HOST)]
+            [parse_url($this->publicSiteUrl(), PHP_URL_HOST)]
         ))));
         $hosts = array_map(fn(string $host): string => strtolower(explode(':', $host, 2)[0]), $hosts);
         $transport = new StreamableHttpTransport(

@@ -87,6 +87,15 @@ public function mcpTools(): array {
 }
 PHP;
 
+        $contextExample = <<<'PHP'
+public function mcpListItems(\Mcp\Server\RequestContext $context): array {
+    $arguments = $context->getRequest()->arguments;
+    $limit = (int) ($arguments['limit'] ?? 25);
+    // Call your bounded, permission-checked service here.
+    return ['limit' => $limit];
+}
+PHP;
+
         $out = $this->nav('documentation')
             . $this->pageIntro($this->_('MCP in plain language'), $this->_('Use a compatible AI client on your computer as a control panel for ProcessWire. MCP Server checks who is connecting, which actions are allowed, and which installed module must perform the work.'), '<span class="mcp-state mcp-state--' . ($endpointReady ? 'ready' : 'off') . '">' . ($endpointReady ? $this->_('Gateway ready') : $this->_('Gateway disabled')) . '</span>')
             . '<nav class="mcp-doc-nav" aria-label="' . $this->_('Documentation sections') . '"><a href="#readiness">' . $this->_('Readiness') . '</a><a href="#connect">' . $this->_('Connect') . '</a><a href="#scopes">' . $this->_('Scopes') . '</a><a href="#module-integration">' . $this->_('Module integration') . '</a></nav>'
@@ -124,6 +133,7 @@ PHP;
             . $this->scopeCard('admin', $this->_('Admin'), $this->_('Highest authority for reviewed administration. Avoid using it for ordinary content operations.'))
             . '</div></section>'
             . '<section class="mcp-panel mcp-doc-panel" id="module-integration"><header><div><p class="mcp-kicker">' . $this->_('Module integration') . '</p><h2>' . $this->_('Let another ProcessWire module contribute tools') . '</h2><p>' . $this->_('The provider module opts in explicitly, describes itself, and returns bounded tool definitions. MCP Server discovers it automatically after the ProcessWire module cache is refreshed.') . '</p></div></header><div class="mcp-doc-code-grid"><div><ol class="mcp-doc-checklist mcp-doc-checklist--compact"><li><span>1</span><div><strong>' . $this->_('Opt in') . '</strong><p>' . $this->_('Add mcpProvider to the module metadata. Nothing is exposed implicitly.') . '</p></div></li><li><span>2</span><div><strong>' . $this->_('Describe the provider') . '</strong><p>' . $this->_('Return a stable name, human title, and module version from mcpProviderInfo().') . '</p></div></li><li><span>3</span><div><strong>' . $this->_('Declare bounded tools') . '</strong><p>' . $this->_('Each tool needs a unique name, callable handler, scope, safety annotations, and a closed JSON Schema.') . '</p></div></li><li><span>4</span><div><strong>' . $this->_('Keep business rules in the module') . '</strong><p>' . $this->_('Bound queries and batches, use stable identifiers, make writes idempotent, and separate staging from publication.') . '</p></div></li></ol></div><pre class="mcp-code-sample"><code>' . $this->e($example) . '</code></pre></div></section>'
+            . '<section class="mcp-panel mcp-doc-panel" id="request-context"><header><div><h2>' . $this->_('Adapting existing tool arguments') . '</h2></div></header><p>' . $this->_('Handlers may accept named PHP parameters matching the schema, or an SDK-injected Mcp\\Server\\RequestContext. Read the validated tool arguments from $context->getRequest()->arguments. Keep the explicit bounded input schema; do not declare the context as a tool input. Context injection does not bypass scopes or provider permissions. Use McpServer::requestClientContext() separately to bind the authenticated client to a domain user.') . '</p><pre><code>' . $this->e($contextExample) . '</code></pre></section>'
             . '<section class="mcp-doc-footer"><div><p class="mcp-kicker">' . $this->_('Safe operating rule') . '</p><h2>' . $this->_('Test on development, then create a separate production client') . '</h2><p>' . $this->_('Never reuse a development token in production. Do not put bearer tokens in Git, ProcessWire content, screenshots, prompts, or shared command history.') . '</p></div><a class="uk-button uk-button-primary" href="' . $this->e($clientUrl) . '">' . $this->_('Manage clients') . '</a></section>';
         return $this->workspace($out);
     }

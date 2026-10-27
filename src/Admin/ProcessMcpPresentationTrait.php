@@ -15,6 +15,7 @@ trait ProcessMcpPresentationTrait {
             'overview' => ['', $this->_('Overview')],
             'clients' => ['clients/', $this->_('Clients')],
             'providers' => ['providers/', $this->_('Providers')],
+            'tools' => ['tools/', $this->_('Tools')],
             'cli' => ['cli/', 'CLI'],
             'audit' => ['audit/', $this->_('Audit')],
             'documentation' => ['documentation/', $this->_('Documentation')],
