@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.0.4] - 2026-10-27
+
+### Fixed
+
+- Filter bearer credential candidates by their stored prefix before expensive
+  password verification. Preserve full hash verification, prefix collisions,
+  prefix-less legacy clients, and existing tokens after namespace changes.
+- Add the missing Tools admin workspace and navigation while retaining the
+  existing tool inventory under Providers.
+- Document SDK-injected RequestContext handlers and access to validated tool
+  arguments in the API and operator guide.
+- Derive the Host allowlist from configuration rather than adding the incoming
+  Host header, as verified by the development HTTP security suite.
+
+### Validation
+
+- Add behavioral regression tests for credential selection and legacy hashes,
+  SDK context injection and input validation, and Tools rendering.
+
+### Upgrade
+
+- Replace the complete module and refresh ProcessWire modules. No credential,
+  configuration, or database migration is required. The previous runtime can
+  be restored without changing stored tokens.
+
 ## [1.0.3] - 2026-09-22
 
 ### Added

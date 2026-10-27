@@ -5,7 +5,7 @@ serves both the stateless MCP 2026-07-28 lifecycle and compatible legacy
 handshake clients. Provider modules do not implement transport or protocol
 negotiation; they publish only governed domain capabilities.
 
-Release version: `1.0.3` (`103` in ProcessWire module metadata).
+Release version: `1.0.4` (`104` in ProcessWire module metadata).
 
 ## Provider discovery
 
@@ -58,7 +58,28 @@ prepends the installation namespace and checks the resulting names for global
 uniqueness. For example, `jobs_coverage` becomes
 `example_jobs_coverage` when the configured namespace is `example`. Names
 already beginning with the active namespace remain supported for compatibility.
-Handlers should use named PHP parameters matching schema property names.
+Handlers can use named PHP parameters matching schema property names, or a
+parameter typed as `\Mcp\Server\RequestContext`. The SDK injects this context;
+do not add it to `input_schema`. This is useful for adapting existing tools
+whose argument names vary:
+
+```php
+public function mcpListItems(\Mcp\Server\RequestContext $context): array {
+    /** @var \Mcp\Schema\Request\CallToolRequest $request */
+    $request = $context->getRequest();
+    $arguments = $request->arguments;
+    $limit = (int) ($arguments['limit'] ?? 25);
+    // Call the provider's existing bounded, permission-checked service here.
+    return ['limit' => $limit];
+}
+```
+
+Use the same explicit, closed input schema as for a named-parameter handler.
+The SDK validates it before invoking the handler; context injection does not
+bypass schema validation or the gateway's scope checks. `RequestContext`
+provides MCP request/session information. To bind a ProcessWire user, use the
+gateway's separate `requestClientContext()` identity and enforce permissions
+inside the provider.
 
 ## Installation namespace
 
@@ -84,6 +105,13 @@ non-secret display prefix and a salted password hash of an HMAC derived with
 ProcessWire's installation-specific `$config->userAuthSalt`. Legacy hashes are
 upgraded after their next successful
 authentication, when the raw token is temporarily available for verification.
+Before expensive hash verification, the gateway skips clients whose non-empty
+stored display prefix does not match the token. The prefix is a candidate filter,
+never authentication: matching candidates still require full hash verification.
+Colliding prefixes and legacy records without a prefix remain supported. The
+stored prefix is used as-is, so changing the installation namespace does not
+invalidate existing credentials. Version 1.0.4 retains the credential hash
+format; no token rotation or schema migration is required.
 
 ## Scopes
 
@@ -147,6 +175,14 @@ Returns the configured absolute endpoint URL for the current installation.
 Returns the canonical public site URL. It prefers the optional
 `public_base_url` module setting and otherwise derives the ProcessWire root,
 using secure HTTPS output for non-local hosts in headless CLI context.
+
+## Admin workspaces
+
+All MCP admin routes require `mcp-server-admin` through `ProcessMcpServer`.
+`setup/mcp-server/tools/` lists tool names, owning providers, required scopes and
+descriptions. The Tools tab and overview link lead here. The existing
+`setup/mcp-server/providers/` page retains its provider and tool inventory for
+compatibility. These pages do not invoke provider tool handlers.
 
 ## Local CLI contract
 

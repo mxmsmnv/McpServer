@@ -31,7 +31,8 @@ If this project helps your work, consider supporting future development through
 - Applies hierarchical `read`, `draft`, `publish`, and `admin` scopes.
 - Issues separate revocable bearer credentials for each client runtime.
 - Stores only salted, installation-peppered credential hashes; raw tokens are
-  shown once and cannot be recovered.
+  shown once and cannot be recovered. Stored token prefixes select candidates
+  before expensive hash verification; a prefix alone never grants access.
 - Rate-limits each client and validates Host, Origin, and request body size.
 - Records identity, tool, scope, result, timing, and an argument digest without
   retaining raw tool arguments.
@@ -122,6 +123,11 @@ Every tool declares a provider-local name, callable handler, required scope,
 safety annotations, and a closed bounded input schema. See [API.md](API.md) for
 the complete contract and verified public gateway methods.
 
+The admin **Tools** tab (`setup/mcp-server/tools/`) lists each tool and its
+required scope. Providers retains the combined inventory. Handlers can accept
+named arguments or an SDK-injected `Mcp\Server\RequestContext` to adapt an
+existing tool set; see the example and validation rules in [API.md](API.md).
+
 ## Local CLI
 
 Enable the CLI under **MCP configuration → Local administration**, then run
@@ -167,10 +173,11 @@ php -l McpServer.module.php
 php -l ProcessMcpServer.module.php
 find src -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/contract.php
+php tests/regression.php
 ```
 
 The real HTTP integration suite is development-only and requires an explicit
-target and `--execute`; its full contract is documented in [API.md](API.md).
+target and `--execute`; setup and cleanup are documented in [TESTING.md](TESTING.md).
 
 ## Source Layout
 
