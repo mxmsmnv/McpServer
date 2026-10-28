@@ -36,6 +36,7 @@ trait McpLifecycleTrait {
     public function ensureStorageSchema(): void {
         $this->installClientTable();
         $this->installAuditTable();
+        $this->installLimitTable();
         $sessionPath = $this->sessionPath();
         if(!is_dir($sessionPath)) $this->wire('files')->mkdir($sessionPath, true);
         $deny = $sessionPath . '/.htaccess';

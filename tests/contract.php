@@ -48,7 +48,7 @@ $checks = [
         && str_contains($module, "'token_hash_version' => 2"),
     'legacy credential hashes upgrade after successful authentication' => str_contains($module, '$hashVersion < 2')
         && str_contains($module, '$this->hashCredential($raw)'),
-    'client identities use durable storage' => str_contains($module, 'mcp_server_clients') && str_contains($module, 'ON DUPLICATE KEY UPDATE'),
+    'client identities use durable storage' => str_contains($module, 'mcp_server_clients') && str_contains($module, 'INSERT') && !str_contains($clientTrait, 'ON DUPLICATE KEY UPDATE'),
     'tokens are not exposed by clients API' => str_contains($module, "unset(\$client['token_hash'], \$client['token_hash_version'])"),
     'scope boundary exists' => str_contains($module, 'clientHasScope(') && str_contains($module, "['read', 'draft', 'publish', 'admin']"),
     'providers receive only bounded authenticated client context' => str_contains($clientTrait, 'requestClientContext()')

@@ -20,6 +20,12 @@ final class DispatchHarness {
     private function audit(string $tool, string $scope, string $status, int $duration, array $request): void {
         $this->audits[] = compact('tool', 'scope', 'status', 'request');
     }
+    private function refreshClientAuthorization(array $verified): ?array { return $verified; }
+    private function beginToolAudit(string $name, string $scope, array $request): int {
+        $this->audit($name, $scope, 'started', 0, $request);
+        return count($this->audits) - 1;
+    }
+    private function finishToolAudit(int $id, string $status, int $duration): void { $this->audits[$id]['status'] = $status; }
     public function handler(): McpServerReferenceHandler {
         return new McpServerReferenceHandler(fn($reference, $arguments, $handler) => $this->dispatchMcpTool($reference, $arguments, $handler));
     }
@@ -155,7 +161,8 @@ final class AuditHarness {
         return new class($this) {
             public function __construct(private AuditHarness $owner) {}
             public function prepare(string $sql): object { return $this; }
-            public function execute(array $params): void { $this->owner->rows[] = $params; }
+            public function execute(array $params): bool { $this->owner->rows[] = $params; return true; }
+            public function lastInsertId(): int { return count($this->owner->rows); }
             public function save(string $channel, string $message): void { $this->owner->errors[] = $message; }
         };
     }

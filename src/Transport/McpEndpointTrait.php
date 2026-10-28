@@ -66,6 +66,11 @@ trait McpEndpointTrait {
         }
 
         if(strtoupper($request->getMethod()) !== 'OPTIONS') {
+            if(!$this->consumeAuthenticationLimit((string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'))) {
+                header('Retry-After: 60');
+                $this->emitJson(429, ['error' => 'rate_limited', 'message' => 'Too many authentication attempts.']);
+                return;
+            }
             $client = $this->authenticate($request->getHeaderLine('Authorization'));
             if(!$client) {
                 header('WWW-Authenticate: Bearer realm="' . $this->serverName() . '"');
@@ -111,7 +116,7 @@ trait McpEndpointTrait {
                 return $this->dispatchMcpTool($reference, $arguments, $handler);
             }));
 
-        foreach($this->toolRegistry() as $definition) {
+        foreach($this->visibleToolRegistry() as $definition) {
             $annotations = new ToolAnnotations(
                 title: (string) $definition['title'],
                 readOnlyHint: (bool) $definition['read_only'],
@@ -174,21 +179,26 @@ trait McpEndpointTrait {
         $scope = (string) ($tool['scope'] ?? 'unknown');
         $request = $arguments['_request'] ?? null;
         $requestData = $request instanceof CallToolRequest ? $request->jsonSerialize() : [];
-        if(!$tool || empty($this->activeClient['id']) || !$request instanceof CallToolRequest
+        $current = $this->activeClient ? $this->refreshClientAuthorization($this->activeClient) : null;
+        if($current) $this->activeClient = $current;
+        if(!$tool || !$current || empty($this->activeClient['id']) || !$request instanceof CallToolRequest
             || $request->name !== $name || !$this->clientHasScope($this->activeClient, $scope)) {
             $this->audit($name, $scope, 'denied', 0, $requestData);
             throw new ToolCallException('This client is not allowed to call the requested tool.');
         }
 
         $started = microtime(true);
+        // Persist evidence before invoking any provider. A storage failure must
+        // not allow an unaudited operation; an interrupted call remains started.
+        $auditId = $this->beginToolAudit($name, $scope, $requestData);
         try {
             $result = $handler->handle($reference, $arguments);
         } catch(\Throwable $e) {
-            $this->audit($name, $scope, 'error', (int) round((microtime(true) - $started) * 1000), $requestData);
+            $this->finishToolAudit($auditId, 'error', (int) round((microtime(true) - $started) * 1000));
             throw $e;
         }
         $status = $result instanceof CallToolResult && $result->isError ? 'error' : 'ok';
-        $this->audit($name, $scope, $status, (int) round((microtime(true) - $started) * 1000), $requestData);
+        $this->finishToolAudit($auditId, $status, (int) round((microtime(true) - $started) * 1000));
         return $result;
     }
 

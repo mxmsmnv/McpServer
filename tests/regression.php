@@ -25,11 +25,25 @@ final class CredentialHarness {
     private ?array $activeClient = null;
     public function namespacePrefix(): string { return $this->namespace; }
     private function clientRecords(): array { return $this->records; }
-    private function saveClientRecords(array $clients): void { $this->records = $clients; $this->saves++; }
     public function wire(string $name): object {
         if($name === 'config') return new class($this->pepper) {
             public function __construct(private string $pepper) {}
             public function get(string $name): string { return $this->pepper; }
+        };
+        if($name === 'database') return new class($this) {
+            public function __construct(private CredentialHarness $h) {}
+            public function prepare(string $sql): object { return $this; }
+            public function execute(array $p): bool {
+                $id = $p[':id'];
+                if(($this->h->records[$id]['token_hash'] ?? '') !== $p[':old_hash']) return true;
+                $this->h->records[$id]['last_used_at'] = $p[':now'];
+                if(isset($p[':new_hash'])) {
+                    $this->h->records[$id]['token_hash'] = $p[':new_hash'];
+                    $this->h->records[$id]['token_hash_version'] = 2;
+                }
+                $this->h->saves++;
+                return true;
+            }
         };
         throw new \RuntimeException('Unexpected service: ' . $name);
     }

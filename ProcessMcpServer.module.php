@@ -24,7 +24,7 @@ class ProcessMcpServer extends Process {
     public static function getModuleInfo(): array {
         return [
             'title' => 'MCP Server',
-            'version' => 105,
+            'version' => 106,
             'summary' => 'Connect AI clients to safe, module-owned ProcessWire operations.',
             'author' => 'Maxim Semenov',
             'href' => 'https://github.com/mxmsmnv/McpServer',

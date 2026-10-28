@@ -70,6 +70,28 @@ trait McpAuditTrait {
     /** @return array<string,array<string,mixed>> */
 
     private function audit(string $tool, string $scope, string $status, int $durationMs, array $request): void {
+        $this->insertAudit($tool, $scope, $status, $durationMs, $request);
+    }
+
+    private function beginToolAudit(string $tool, string $scope, array $request): int {
+        $id = $this->insertAudit($tool, $scope, 'started', 0, $request);
+        if($id === null) throw new \Mcp\Exception\ToolCallException('Audit storage unavailable; tool was not executed.');
+        return $id;
+    }
+
+    private function finishToolAudit(int $id, string $status, int $durationMs): void {
+        try {
+            $statement = $this->wire('database')->prepare('UPDATE mcp_server_audit SET status=:status, duration_ms=:duration WHERE id=:id');
+            if(!$statement->execute([':status' => $status, ':duration' => max(0, $durationMs), ':id' => $id])) {
+                throw new \RuntimeException('Audit completion failed.');
+            }
+        } catch(\Throwable) {
+            // The durable started row remains evidence of an incomplete result.
+            $this->wire('log')->save('mcp-server', 'Audit completion failed; invocation remains started.');
+        }
+    }
+
+    private function insertAudit(string $tool, string $scope, string $status, int $durationMs, array $request): ?int {
         try {
             $id = $request['id'] ?? null;
             $requestId = is_string($id) || is_int($id) ? (string) $id : bin2hex(random_bytes(8));
@@ -80,8 +102,8 @@ trait McpAuditTrait {
                 . '(request_id, client_id, tool_name, scope, arguments_digest, status, duration_ms, created_at) '
                 . 'VALUES (:request_id, :client_id, :tool_name, :scope, :arguments_digest, :status, :duration_ms, :created_at)'
             );
-            $statement->execute([
-                ':request_id' => substr($requestId, 0, 191),
+            $ok = $statement->execute([
+                ':request_id' => $this->auditRequestId($requestId),
                 ':client_id' => substr((string) ($this->activeClient['id'] ?? ''), 0, 64),
                 ':tool_name' => substr($tool, 0, 128),
                 ':scope' => substr($scope, 0, 32),
@@ -90,9 +112,20 @@ trait McpAuditTrait {
                 ':duration_ms' => max(0, $durationMs),
                 ':created_at' => date('Y-m-d H:i:s'),
             ]);
-        } catch(\Throwable $e) {
-            $this->wire('log')->save('mcp-server', 'Audit write failed: ' . $e->getMessage());
+            if(!$ok) return null;
+            $id = (int) $this->wire('database')->lastInsertId();
+            return $id > 0 ? $id : null;
+        } catch(\Throwable) {
+            $this->wire('log')->save('mcp-server', 'Audit write failed.');
+            return null;
         }
+    }
+
+    private function auditRequestId(string $id): string {
+        // Preserve ordinary IDs exactly; hash oversized or invalid UTF-8 IDs
+        // without requiring mbstring or splitting a Unicode code point.
+        return strlen($id) <= 191 && preg_match('//u', $id) === 1
+            ? $id : 'sha256:' . hash('sha256', $id);
     }
 
     private function installAuditTable(): void {

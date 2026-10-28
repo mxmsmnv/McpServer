@@ -45,9 +45,7 @@ trait McpClientTrait {
             'last_used_at' => null,
         ];
 
-        $clients = $this->clientRecords();
-        $clients[$id] = $client;
-        $this->saveClientRecords($clients);
+        $this->insertClientRecord($client);
 
         $public = $this->publicClient($client);
         $public['token'] = $raw;
@@ -55,12 +53,15 @@ trait McpClientTrait {
     }
 
     public function revokeClient(string $id): bool {
-        $clients = $this->clientRecords();
-        if(!isset($clients[$id])) return false;
-        $clients[$id]['enabled'] = false;
-        $clients[$id]['revoked_at'] = time();
-        $this->saveClientRecords($clients);
-        return true;
+        $statement = $this->wire('database')->prepare(
+            'UPDATE mcp_server_clients SET enabled=0, revoked_at=:now WHERE id=:id'
+        );
+        if(!$statement->execute([':now' => time(), ':id' => $id])) return false;
+        if($statement->rowCount() > 0) return true;
+        // Preserve idempotent success for an already revoked, existing client.
+        $exists = $this->wire('database')->prepare('SELECT id FROM mcp_server_clients WHERE id=:id');
+        $exists->execute([':id' => $id]);
+        return $exists->fetchColumn() !== false;
     }
 
     /** @return array<int,array<string,mixed>> */
@@ -95,15 +96,26 @@ trait McpClientTrait {
             }
             if(!$valid) continue;
 
-            // A legacy password hash cannot be migrated until its client next
-            // presents the raw token. Upgrade it opportunistically at login.
-            if($hashVersion < 2) {
-                $clients[$id]['token_hash'] = $this->hashCredential($raw);
-                $clients[$id]['token_hash_version'] = 2;
+            // Never write a registry snapshot: usage/hash migration must not
+            // overwrite a concurrent revocation, scope change or expiry change.
+            $expectedHash = (string) $client['token_hash'];
+            $newHash = $hashVersion < 2 ? $this->hashCredential($raw) : $expectedHash;
+            try {
+                $statement = $this->wire('database')->prepare(
+                    'UPDATE mcp_server_clients SET last_used_at=:now'
+                    . ($hashVersion < 2 ? ', token_hash=:new_hash, token_hash_version=2' : '')
+                    . ' WHERE id=:id AND token_hash=:old_hash AND enabled=1'
+                    . ' AND (expires_at IS NULL OR expires_at>:expires_now)'
+                );
+                $params = [':now' => time(), ':expires_now' => time(), ':id' => $id, ':old_hash' => $expectedHash];
+                if($hashVersion < 2) $params[':new_hash'] = $newHash;
+                if(!$statement->execute($params)) return null;
+            } catch(\Throwable) {
+                $this->wire('log')->save('mcp-server', 'Credential usage update failed closed.');
+                return null;
             }
-            $clients[$id]['last_used_at'] = time();
-            $this->saveClientRecords($clients);
-            return $clients[$id];
+            $client['token_hash'] = $newHash;
+            return $this->refreshClientAuthorization($client);
         }
         return null;
     }
@@ -116,14 +128,53 @@ trait McpClientTrait {
         return $max >= ($rank[$required] ?? 999);
     }
 
+    /** Return current policy only while the verified credential is still valid. */
+    private function refreshClientAuthorization(array $verified): ?array {
+        $current = $this->clientRecords()[(string) ($verified['id'] ?? '')] ?? null;
+        if(!$current || empty($current['enabled']) || !empty($current['revoked_at'])
+            || (!empty($current['expires_at']) && (int) $current['expires_at'] <= time())
+            || !hash_equals((string) ($verified['token_hash'] ?? ''), (string) ($current['token_hash'] ?? ''))) return null;
+        return $current;
+    }
+
     private function consumeRateLimit(string $clientId): bool {
-        $limit = max(1, min(600, (int) $this->rate_limit_per_minute));
-        $bucket = gmdate('YmdHi');
-        $key = 'mcp-rate-' . hash('sha256', $clientId . ':' . $bucket);
-        $count = (int) $this->wire('cache')->get($key);
-        if($count >= $limit) return false;
-        $this->wire('cache')->save($key, $count + 1, 90);
-        return true;
+        return $this->consumeLimitBucket('client:' . $clientId, max(1, min(600, (int) $this->rate_limit_per_minute)));
+    }
+
+    /** Bound expensive credential checks, including invalid credentials. */
+    private function consumeAuthenticationLimit(string $address): bool {
+        // REMOTE_ADDR only; arbitrary forwarded headers must not select buckets.
+        // The global cap also bounds the number of attacker-created IP buckets.
+        return $this->consumeLimitBucket('auth:global', 600)
+            && $this->consumeLimitBucket('auth:ip:' . $address, 120);
+    }
+
+    private function consumeLimitBucket(string $identity, int $limit): bool {
+        try {
+            $database = $this->wire('database');
+            $now = time();
+            $key = hash('sha256', $identity . ':' . intdiv($now, 60));
+            $cleanup = $database->prepare('DELETE FROM mcp_server_limits WHERE expires_at<:now LIMIT 1000');
+            $cleanup->execute([':now' => $now]);
+            $insert = $database->prepare('INSERT IGNORE INTO mcp_server_limits (bucket_key, hits, expires_at) VALUES (:key, 0, :expires)');
+            $insert->execute([':key' => $key, ':expires' => (intdiv($now, 60) + 2) * 60]);
+            // A single conditional UPDATE serializes admission for this bucket.
+            $update = $database->prepare('UPDATE mcp_server_limits SET hits=hits+1 WHERE bucket_key=:key AND hits<:maximum');
+            $update->execute([':key' => $key, ':maximum' => $limit]);
+            return $update->rowCount() === 1;
+        } catch(\Throwable $e) {
+            $this->wire('log')->save('mcp-server', 'Request admission storage unavailable.');
+            return false;
+        }
+    }
+
+    private function installLimitTable(): void {
+        $this->wire('database')->exec(
+            'CREATE TABLE IF NOT EXISTS mcp_server_limits ('
+            . 'bucket_key CHAR(64) NOT NULL, hits INT UNSIGNED NOT NULL DEFAULT 0,'
+            . 'expires_at INT UNSIGNED NOT NULL, PRIMARY KEY (bucket_key), KEY expires (expires_at)'
+            . ') ENGINE=InnoDB DEFAULT CHARSET=ascii'
+        );
     }
 
     /** @return array{0:object,1:string,2:bool} */
@@ -178,53 +229,42 @@ trait McpClientTrait {
             // One-time migration from the pre-table development build.
             $legacy = is_array($this->clients) ? $this->clients : [];
             if($legacy !== []) {
-                $this->saveClientRecords($legacy);
+                foreach($legacy as $record) {
+                    if(is_array($record) && !empty($record['id']) && !empty($record['token_hash'])) $this->insertClientRecord($record, true);
+                }
                 $config = $this->wire('modules')->getConfig($this);
                 unset($config['clients']);
                 $this->wire('modules')->saveConfig($this, $config);
                 $this->clients = [];
-                return $legacy;
+                return $this->clientRecords();
             }
             return [];
         } catch(\Throwable $e) {
             $this->wire('log')->save('mcp-server', 'Client registry read failed: ' . $e->getMessage());
-            $records = is_array($this->clients) ? $this->clients : [];
-            $normalised = [];
-            foreach($records as $record) {
-                if(!is_array($record) || empty($record['id'])) continue;
-                $normalised[(string) $record['id']] = $record;
-            }
-            return $normalised;
+            return []; // Registry failures must never authenticate stale config.
         }
     }
 
-    /** @param array<string,array<string,mixed>> $clients */
-    private function saveClientRecords(array $clients): void {
+    /** Insert only; legacy migration must never overwrite an existing policy. */
+    private function insertClientRecord(array $client, bool $migration = false): void {
         $statement = $this->wire('database')->prepare(
-            'INSERT INTO mcp_server_clients '
+            ($migration ? 'INSERT IGNORE' : 'INSERT') . ' INTO mcp_server_clients '
             . '(id, label, prefix, token_hash, token_hash_version, scopes_json, enabled, created_at, expires_at, last_used_at, revoked_at) '
-            . 'VALUES (:id, :label, :prefix, :token_hash, :token_hash_version, :scopes_json, :enabled, :created_at, :expires_at, :last_used_at, :revoked_at) '
-            . 'ON DUPLICATE KEY UPDATE label=VALUES(label), prefix=VALUES(prefix), token_hash=VALUES(token_hash), token_hash_version=VALUES(token_hash_version), '
-            . 'scopes_json=VALUES(scopes_json), enabled=VALUES(enabled), expires_at=VALUES(expires_at), '
-            . 'last_used_at=VALUES(last_used_at), revoked_at=VALUES(revoked_at)'
+            . 'VALUES (:id, :label, :prefix, :token_hash, :token_hash_version, :scopes_json, :enabled, :created_at, :expires_at, :last_used_at, :revoked_at)'
         );
-        foreach($clients as $client) {
-            if(!is_array($client) || empty($client['id']) || empty($client['token_hash'])) continue;
-            $statement->execute([
-                ':id' => substr((string) $client['id'], 0, 32),
-                ':label' => substr((string) ($client['label'] ?? ''), 0, 191),
-                ':prefix' => substr((string) ($client['prefix'] ?? ''), 0, 64),
-                ':token_hash' => substr((string) $client['token_hash'], 0, 255),
-                ':token_hash_version' => (int) ($client['token_hash_version'] ?? 1),
-                ':scopes_json' => json_encode($this->normaliseScopes((array) ($client['scopes'] ?? [])), JSON_THROW_ON_ERROR),
-                ':enabled' => !empty($client['enabled']) ? 1 : 0,
-                ':created_at' => (int) ($client['created_at'] ?? time()),
-                ':expires_at' => !empty($client['expires_at']) ? (int) $client['expires_at'] : null,
-                ':last_used_at' => !empty($client['last_used_at']) ? (int) $client['last_used_at'] : null,
-                ':revoked_at' => !empty($client['revoked_at']) ? (int) $client['revoked_at'] : null,
-            ]);
-        }
-        $this->clients = $clients;
+        $statement->execute([
+            ':id' => substr((string) $client['id'], 0, 32),
+            ':label' => substr((string) ($client['label'] ?? ''), 0, 191),
+            ':prefix' => substr((string) ($client['prefix'] ?? ''), 0, 64),
+            ':token_hash' => substr((string) $client['token_hash'], 0, 255),
+            ':token_hash_version' => (int) ($client['token_hash_version'] ?? 1),
+            ':scopes_json' => json_encode($this->normaliseScopes((array) ($client['scopes'] ?? [])), JSON_THROW_ON_ERROR),
+            ':enabled' => !empty($client['enabled']) ? 1 : 0,
+            ':created_at' => (int) ($client['created_at'] ?? time()),
+            ':expires_at' => !empty($client['expires_at']) ? (int) $client['expires_at'] : null,
+            ':last_used_at' => !empty($client['last_used_at']) ? (int) $client['last_used_at'] : null,
+            ':revoked_at' => !empty($client['revoked_at']) ? (int) $client['revoked_at'] : null,
+        ]);
     }
 
     /** @param array<string,mixed> $client @return array<string,mixed> */

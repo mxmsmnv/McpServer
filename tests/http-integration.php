@@ -46,6 +46,7 @@ $issued = [];
 $failures = [];
 $passes = 0;
 $legacySession = '';
+$temporaryLimitKeys = [];
 
 $record = static function(bool $ok, string $label, string $detail = '') use (&$failures, &$passes): void {
     fwrite(STDOUT, ($ok ? '[PASS] ' : '[FAIL] ') . $label . ($detail !== '' ? ' — ' . $detail : '') . PHP_EOL);
@@ -137,6 +138,16 @@ try {
     $readCall = $request($endpoint, (string) $read['token'], $callBody, $modernHeaders('tools/call', $readName));
     $record($readCall['status'] === 200 && empty($readCall['json']['error']), 'read-scoped tool call succeeds', $readName);
 
+    $allowedNames = array_column(array_filter($tools, static fn(array $t): bool => $t['scope'] === 'read'), 'name');
+    $visibleNames = array_column($listedTools, 'name');
+    sort($allowedNames); sort($visibleNames);
+    $record($visibleNames === $allowedNames, 'HTTP tools/list contains only read-authorized tools');
+    $unicodeId = $runId . str_repeat('é', 96);
+    $unicodeBody = $modern('tools/call', $unicodeId, ['name' => $readName, 'arguments' => new stdClass()]);
+    $unicodeResponse = $request($endpoint, (string) $read['token'], $unicodeBody, $modernHeaders('tools/call', $readName));
+    $unicodeAudit = array_filter($mcp->recentAudit(200), static fn(array $r): bool => $r['request_id'] === 'sha256:' . hash('sha256', $unicodeId) && $r['status'] === 'ok');
+    $record($unicodeResponse['status'] === 200 && count($unicodeAudit) === 1, 'HTTP multibyte request ID has exactly one completed audit entry');
+
     $restrictedTool = $byScope['draft'] ?? $byScope['publish'] ?? $byScope['admin'] ?? null;
     if($restrictedTool) {
         $restrictedName = (string) $restrictedTool['name'];
@@ -174,12 +185,14 @@ try {
     $record($expiredResponse['status'] === 401, 'expired credential is rejected', 'HTTP ' . $expiredResponse['status']);
 
     $rate = $issue('read');
-    $bucket = gmdate('YmdHi');
-    $rateKey = 'mcp-rate-' . hash('sha256', (string) $rate['id'] . ':' . $bucket);
-    $wire->cache->save($rateKey, max(1, min(600, (int) $mcp->rate_limit_per_minute)), 90);
+    $rateKey = hash('sha256', 'client:' . $rate['id'] . ':' . intdiv(time(), 60));
+    $seed = $wire->database->prepare('INSERT INTO mcp_server_limits (bucket_key,hits,expires_at) VALUES (?,?,?)');
+    $temporaryLimitKeys[] = $rateKey;
+    $seed->execute([$rateKey, max(1, min(600, (int) $mcp->rate_limit_per_minute)), time() + 120]);
     $rateResponse = $request($endpoint, (string) $rate['token'], $listBody, $modernHeaders('tools/list'));
     $record($rateResponse['status'] === 429 && isset($rateResponse['headers']['retry-after']), 'per-client rate limit returns Retry-After', 'HTTP ' . $rateResponse['status']);
-    $wire->cache->delete($rateKey);
+    $cleanup = $wire->database->prepare('DELETE FROM mcp_server_limits WHERE bucket_key=?');
+    $cleanup->execute([$rateKey]);
 
     if($restrictedTool) {
         $failureName = (string) $restrictedTool['name'];
@@ -239,7 +252,19 @@ try {
         $mixedAudit = array_values(array_filter($auditRows, static fn(array $row): bool => (string) ($row['request_id'] ?? '') === $runId . '-batch-read-denied'));
         $record(count($mixedAudit) === 1 && $mixedAudit[0]['status'] === 'denied', 'read element of a rejected mixed batch never executes');
     }
+    if(in_array($endpointHost, ['127.0.0.1', '::1'], true)) {
+        $authKey = hash('sha256', 'auth:ip:' . $endpointHost . ':' . intdiv(time(), 60));
+        $temporaryLimitKeys[] = $authKey;
+        $seed = $wire->database->prepare('INSERT INTO mcp_server_limits (bucket_key,hits,expires_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE hits=VALUES(hits)');
+        $seed->execute([$authKey, 120, time()+120]);
+        $blocked = $request($endpoint, $read['prefix'] . str_repeat('x',43), '{}');
+        $record($blocked['status'] === 429 && isset($blocked['headers']['retry-after']), 'HTTP authentication admission limit precedes invalid token verification');
+    } else {
+        fwrite(STDOUT, "[SKIP] pre-auth peer seed requires a direct loopback endpoint.\n");
+    }
 } finally {
+    $cleanup = $wire->database->prepare('DELETE FROM mcp_server_limits WHERE bucket_key=?');
+    foreach($temporaryLimitKeys as $key) $cleanup->execute([$key]);
     if($legacySession !== '' && isset($read['token'])) {
         $request($endpoint, (string) $read['token'], '', ['Mcp-Session-Id' => $legacySession, 'MCP-Protocol-Version' => '2025-03-26'], 'DELETE');
     }

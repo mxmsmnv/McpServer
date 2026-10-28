@@ -40,6 +40,16 @@ trait McpProviderRegistryTrait {
             }
         }
 
+        if($this->activeClient !== null) {
+            $counts = array_count_values(array_column($this->visibleToolRegistry(), 'provider'));
+            $admin = $this->clientHasScope($this->activeClient, 'admin');
+            $providers = array_values(array_filter($providers, static fn(array $provider): bool => isset($counts[$provider['module']])));
+            foreach($providers as &$provider) {
+                $provider['tool_count'] = $counts[$provider['module']];
+                if(!$admin) unset($provider['version']);
+            }
+            unset($provider);
+        }
         return $providers;
     }
 
@@ -48,12 +58,18 @@ trait McpProviderRegistryTrait {
         return array_values(array_map(function(array $tool): array {
             unset($tool['handler']);
             return $tool;
-        }, $this->toolRegistry()));
+        }, $this->visibleToolRegistry()));
+    }
+
+    private function visibleToolRegistry(): array {
+        $registry = $this->toolRegistry();
+        if($this->activeClient === null) return $registry;
+        return array_filter($registry, fn(array $tool): bool => $this->clientHasScope($this->activeClient, (string) $tool['scope']));
     }
 
     /** @return array<string,mixed> */
     public function toolSystemStatus(): array {
-        return [
+        $status = [
             'service' => $this->namespacePrefix() . '-mcp',
             'version' => self::VERSION_STRING,
             'environment' => $this->environmentName(),
@@ -64,9 +80,13 @@ trait McpProviderRegistryTrait {
             'php' => PHP_VERSION,
             'enabled' => (bool) $this->enabled,
             'providers' => count($this->providers()),
-            'tools' => count($this->toolRegistry()),
+            'tools' => count($this->visibleToolRegistry()),
             'time' => gmdate('c'),
         ];
+        if($this->activeClient !== null && !$this->clientHasScope($this->activeClient, 'admin')) {
+            unset($status['processwire'], $status['php']);
+        }
+        return $status;
     }
 
     /** @return array<string,mixed> */

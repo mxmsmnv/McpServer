@@ -11,12 +11,23 @@ jobs:
     strategy:
       matrix:
         php: ['8.2', '8.5']
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-only-password
+          MYSQL_DATABASE: mcp_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ptest-only-password"
+          --health-interval=10s --health-timeout=5s --health-retries=10
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring
+          extensions: mbstring, pdo_mysql
           coverage: none
       - run: composer validate --strict
       - run: composer install --no-dev --prefer-dist --optimize-autoloader
@@ -25,3 +36,8 @@ jobs:
       - run: php tests/contract.php
       - run: php tests/regression.php
       - run: php tests/security-regression.php
+      - run: php tests/security-storage.php
+        env:
+          MCP_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=mcp_test;charset=utf8mb4
+          MCP_TEST_USER: root
+          MCP_TEST_PASSWORD: test-only-password
