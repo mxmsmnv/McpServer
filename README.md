@@ -92,6 +92,8 @@ Composer runtime dependencies, including `vendor/`, ship with the release.
 The default endpoint is `/mcp/` and is disabled by default.
 
 Security update: install the latest patch before enabling remote access.
+Refresh ProcessWire modules after updating to create the atomic limiter table.
+Review intended client revocations, scopes and expiry dates after upgrade.
 JSON-RPC batches are rejected for all protocol versions; send one message per
 HTTP request. Single-message legacy clients remain supported. See
 [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
@@ -181,6 +183,7 @@ find src -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/contract.php
 php tests/regression.php
 php tests/security-regression.php
+php tests/security-storage.php --root=/path/to/disposable-development-site
 ```
 
 The real HTTP integration suite is development-only and requires an explicit

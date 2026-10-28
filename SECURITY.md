@@ -11,6 +11,25 @@ files between releases.
 | 1.x | Supported |
 | 0.x and earlier | Unsupported |
 
+## Concurrent credential policy and audit fixes in 1.0.6
+
+Update 1.0.5 and earlier before relying on durable revocation or scope/expiry
+changes. Concurrent registry writes could restore earlier client policy. The
+fix uses targeted writes and rechecks authoritative policy at authorization
+and tool dispatch. Existing tokens keep their format. Review and reapply any
+intended revocations, scope reductions and expiries after upgrade.
+
+Version 1.0.6 also makes request admission atomic, limits attempts before
+expensive authentication, and persists audit evidence before tool execution.
+Oversized request IDs can no longer corrupt UTF-8 audit values in strict SQL
+mode. A `started` audit entry indicates that an invocation began but its final
+outcome is unknown; investigate provider state before retrying a write.
+
+Disable the endpoint and drain in-flight requests before an emergency revocation
+on older releases. Keep access disabled if an update is unavailable. Upgrade the
+complete runtime, refresh modules to create the limiter table, verify policies
+and then restore access. Revocation does not cancel provider work already begun.
+
 ## Authenticated scope bypass fixed in 1.0.5
 
 Upgrade installations running 1.0.4 or earlier before relying on client scope

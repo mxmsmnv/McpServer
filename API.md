@@ -5,7 +5,7 @@ serves both the stateless MCP 2026-07-28 lifecycle and compatible legacy
 handshake clients. Provider modules do not implement transport or protocol
 negotiation; they publish only governed domain capabilities.
 
-Release version: `1.0.5` (`105` in ProcessWire module metadata).
+Release version: `1.0.6` (`106` in ProcessWire module metadata).
 
 ## Provider discovery
 
@@ -112,6 +112,41 @@ Colliding prefixes and legacy records without a prefix remain supported. The
 stored prefix is used as-is, so changing the installation namespace does not
 invalidate existing credentials. Version 1.0.4 retains the credential hash
 format; no token rotation or schema migration is required.
+
+## Concurrent authorization, admission and audit (1.0.6)
+
+Credential creation, revocation and usage updates write only the relevant row
+and fields. Successful verification reloads authoritative client policy; actual
+tool dispatch reloads it again. A registry read failure never authenticates from
+legacy configuration. Revocation prevents subsequent authorization/dispatch;
+it cannot cancel a provider operation that has already started.
+
+Request limits use atomic conditional updates in `mcp_server_limits`, created
+by module install/upgrade. Each client retains its configured per-minute limit.
+Before credential verification, all non-OPTIONS attempts share a budget of 600
+per UTC minute and each direct peer has a budget of 120. Invalid credentials
+consume this budget too. Exhaustion returns HTTP 429 with `Retry-After: 60`.
+A limiter storage failure denies admission. Buckets expire after at most two
+minutes and are removed in bounded batches during subsequent requests.
+
+Peer identity uses `REMOTE_ADDR`, never caller-supplied forwarded headers.
+Clients behind one reverse proxy share its peer budget unless the web server
+securely resolves the original address from explicitly trusted proxies. Review
+that deployment configuration rather than trusting arbitrary forwarded values.
+
+A `started` audit row must be inserted before any provider invocation. If the
+insert fails, the tool is not executed. The same row is completed as `ok` or
+`error`; interruption/completion failure leaves `started` evidence requiring
+operator investigation. Denied requests remain best-effort audited. Ordinary
+request IDs are retained; IDs over 191 bytes or invalid UTF-8 become
+`sha256:` plus the SHA-256 of the original ID. Raw arguments are never stored.
+
+During an authenticated request, `tools/list`, `tools()` and capability tool
+metadata contain only tools allowed by current scopes. Provider inventories
+omit providers without visible tools and report visible counts. Non-admin
+clients do not receive PHP/ProcessWire versions or provider version fields.
+Local operator APIs outside an MCP request retain their complete inventory.
+Provider modules remain responsible for their own domain visibility rules.
 
 ## Scopes
 

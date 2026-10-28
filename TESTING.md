@@ -25,6 +25,7 @@ find . -path './.git' -prune -o -path './vendor' -prune -o -name '*.php' -print0
 php tests/contract.php
 php tests/regression.php
 php tests/security-regression.php
+php tests/security-storage.php --root=/path/to/disposable-development-site
 php tests/processwire-integration.php --root=/path/to/development-site
 php tests/http-integration.php --root=/path/to/development-site --url=http://127.0.0.1:8766/mcp/ --execute
 ```
@@ -135,3 +136,34 @@ backup of module files and the consuming site's normal database backup.
 - Upgrade complete runtime files to 1.0.5; credentials do not need rotation.
   JSON-RPC batches are no longer supported in any protocol era. If rollback
   is necessary, disable the endpoint before restoring an older runtime.
+
+## Release evidence: 1.0.6 (2026-10-28)
+
+- Dedicated local `kontor-lifecycle` site, ProcessWire 3.0.259 / PHP 8.5.8 /
+  MariaDB. Module metadata refreshed to 106; new limiter schema created.
+- 42 contract, 27 behavioral, 41 dispatch-security, 32 real storage-security,
+  21 ProcessWire dispatcher/permission and 32 real HTTP checks passed.
+- Storage checks create only connection-local temporary tables from actual
+  module schema. They cover fresh/idempotent schema, five concurrent policy
+  races, current-scope/expiry/hash rechecks, legacy migration, fail-closed reads,
+  atomic request admission, pre-bcrypt throttling, strict-mode Unicode IDs,
+  audit insertion/completion failures and scoped discovery. SQL mode is restored
+  and temporary tables are dropped in finally. Controlled interleaving verifies
+  race boundaries; this is not a high-load benchmark.
+- HTTP fixtures retain audit evidence and revoked client metadata. Credentials
+  are revoked, temporary seeded limiter keys removed, legacy sessions deleted;
+  development endpoint configuration is restored after testing.
+- Composer validation/install/audit and PHP syntax checks passed. PHP 8.2/8.5
+  CI now also provisions MySQL 8 and runs the storage suite with PDO MySQL.
+- Fresh schema and upgrade are tested directly against real SQL. A complete
+  ProcessWire uninstall/reinstall was not repeated; the uninstall hook remains
+  unchanged and retains client/audit records.
+- No UI changes; browser layout checks were not repeated. Provider business
+  authorization remains outside this gateway's test scope.
+- Upgrade creates only the additional transient limiter table. No token-format
+  migration or client/audit deletion. Keep endpoint disabled during deployment
+  and rollback; retain normal site backups. Reapply intended policies on upgrade.
+
+The storage suite can also run without ProcessWire using `MCP_TEST_DSN`,
+`MCP_TEST_USER` and `MCP_TEST_PASSWORD`, pointing to a dedicated MySQL/MariaDB
+fixture database. Never point any suite at production.
